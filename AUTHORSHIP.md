@@ -49,6 +49,20 @@ What that actually involved, stated plainly so it is neither inflated nor erased
   review and correction: `auth.JWTAuthenticator.WhoIs` and
   `session.PostgresStore.LoadOrCreate`. Both took several iterations.
 
+## Phase 5 — deliberately split
+
+Tool splicing and model routing, divided the same way.
+
+| Component | Who |
+|---|---|
+| `PersistDemotions` rename and gating, `tool_choice` modelled on `ChatRequest` | Assisted |
+| All test files in `internal/gateway` | Assisted |
+| `ChatRequest.FilterTools` | Mine |
+| `ChatRequest.ForcedToolName` | Mine |
+| `ChatRequest.UnknownTools` | Mine |
+| `ChatRequest.Splice` reconciliation policy | Mine, reviewed |
+| `TOOL_VALIDATOR` recording, model routing, the `Apply` path | Assisted |
+
 ## Phase 4 — deliberately split
 
 Inbound inspection is divided so the work is attributable.

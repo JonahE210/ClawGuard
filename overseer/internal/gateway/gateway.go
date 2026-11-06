@@ -49,18 +49,26 @@ type Deps struct {
 	// the request in hand and is never persisted.
 	UnavailableFloor capability.Tier
 
-	// EnforceDecisions controls whether a signal-driven demotion is persisted.
+	// PersistDemotions controls whether a signal-driven demotion is WRITTEN to
+	// session_states. It does not control whether an existing tier is honoured.
 	//
-	// False — the default — computes and logs the decision without calling
-	// session.Apply. The thresholds are placeholders until an evaluation corpus
-	// can say what the false-positive rate is, and a false positive restricts a
-	// real person, so detection ships before enforcement does.
+	// That distinction is the whole reason for the name. A session can already
+	// be restricted — carried forward from earlier, or floored because an
+	// inspector is unreachable — and those facts are true regardless of this
+	// flag. Gating enforcement on it would mean a quarantined session gets full
+	// tool access back the moment someone turns persistence off to recalibrate,
+	// and the floor would stop meaning anything at all.
 	//
-	// The zero value being "do not enforce" is the one place in this codebase
-	// where the permissive default is correct: enforcing with uncalibrated
-	// thresholds harms users, while not enforcing only delays protection that
-	// does not work yet.
-	EnforceDecisions bool
+	// False — the default — records evidence and leaves the session alone. The
+	// thresholds are placeholders until a corpus can say what the
+	// false-positive rate is, and a false positive restricts a real person, so
+	// detection ships before persistence does.
+	//
+	// The zero value being "do not persist" is the one place in this codebase
+	// where the permissive default is correct: writing demotions from
+	// uncalibrated thresholds harms users, while not writing them only delays
+	// protection that does not work yet.
+	PersistDemotions bool
 
 	// CaptureRawContent stores the inspected text verbatim and records clean
 	// verdicts as well as findings. Both are needed to build an evaluation
@@ -193,13 +201,15 @@ func (g *Gateway) handleChat(w http.ResponseWriter, r *http.Request) {
 		time.Now(),
 	)
 
-	// With enforcement off the decision is computed and logged and changes
-	// nothing — not the stored tier, not this request. The thresholds are
-	// placeholders until an evaluation corpus can say what the false-positive
-	// rate is, and acting on them would restrict real people on the strength of
-	// numbers nobody has validated.
+	// With persistence off the decision is computed and logged but not written,
+	// and does not raise the tier for this request either. The thresholds are
+	// placeholders, and acting on them would restrict real people on the
+	// strength of numbers nobody has validated.
+	//
+	// Note what this does NOT skip: the stored tier and the floor below. Those
+	// are already true and are enforced regardless.
 	tier := sess.Tier
-	if g.d.EnforceDecisions {
+	if g.d.PersistDemotions {
 		tier = decision.To
 	}
 
@@ -222,7 +232,7 @@ func (g *Gateway) handleChat(w http.ResponseWriter, r *http.Request) {
 		"decision_tier", decision.To.String(),
 		"risk_after", decision.RiskAfter,
 		"signal_delta", decision.SignalDelta,
-		"enforced", g.d.EnforceDecisions,
+		"persisted", g.d.PersistDemotions,
 		"reasons", decision.Reasons,
 	)
 
@@ -235,7 +245,7 @@ func (g *Gateway) handleChat(w http.ResponseWriter, r *http.Request) {
 	// evidence is how a corpus turns out to have holes months later.
 	redacted := redactFor(req.LastUserText(), g.d.CaptureRawContent, g.d.RawContentRetention)
 	if vs := violationsFrom(outcome, redacted, decision, sess.Tier,
-		g.d.EnforceDecisions, g.d.CaptureRawContent); len(vs) > 0 {
+		g.d.PersistDemotions, g.d.CaptureRawContent); len(vs) > 0 {
 		if err := g.d.Sessions.Record(r.Context(), sess.ID, requestID, vs); err != nil {
 			log.Error("recording evidence failed", "violations", len(vs), "err", err)
 		} else {
@@ -257,8 +267,29 @@ func (g *Gateway) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Phase 3 enforces nothing: no tool stripping, no model routing, no
-	// demotion. The profile is computed and logged so the seam is exercised and
+	// TODO(phase 5): splice here, once splice.go is implemented.
+	//
+	//	result := req.Splice(g.d.Registry, profile)
+	//
+	// Then, still to wire:
+	//
+	//   - Record result.Unknown as TOOL_VALIDATOR violations. An unregistered
+	//     tool is stripped at every tier including Full, so without this a
+	//     registry that has fallen behind an agent presents as a model that
+	//     mysteriously stopped using a tool.
+	//   - Log result.Removed and result.ToolChoiceDropped. The gateway is
+	//     invisible in wire format and must not be invisible in telemetry.
+	//   - Model routing: forward the client's model at tiers 0 and 1, and
+	//     substitute the configured lightweight model at tier 2.
+	//   - Call session.Apply instead of Record when PersistDemotions is set, so
+	//     a session can actually reach a restricted tier.
+	//
+	// Note what does NOT gate on PersistDemotions: the splice itself. That flag
+	// governs whether a decision is written, not whether an existing tier is
+	// honoured — a carried-forward tier and an availability floor are already
+	// true, and the profile above reflects them.
+	//
+	// Until then the profile is computed and logged but unused, so the seam is
 	// observable before anything depends on it.
 	_ = profile
 

@@ -134,7 +134,7 @@ func run(log *slog.Logger) error {
 		// until an evaluation corpus can say what the false-positive rate is,
 		// and a false positive restricts a real person. Decisions are computed
 		// and logged; nothing is persisted or acted on.
-		EnforceDecisions: false,
+		PersistDemotions: false,
 
 		// Off unless explicitly enabled. Capture stores prompts verbatim and
 		// writes a row per inspector per request, which is the right trade only

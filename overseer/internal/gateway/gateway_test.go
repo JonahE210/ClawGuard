@@ -432,7 +432,7 @@ func TestGateway_PassesConversationHistoryToInspectors(t *testing.T) {
 // on risk that should have expired.
 func TestGateway_DecaysRiskFromTheRiskBaseline(t *testing.T) {
 	h := newHarness(t)
-	h.gw.d.EnforceDecisions = true
+	h.gw.d.PersistDemotions = true
 
 	id := session.NewID()
 	if _, err := h.pool.Exec(t.Context(), `
@@ -459,7 +459,7 @@ func TestGateway_DecaysRiskFromTheRiskBaseline(t *testing.T) {
 // With enforcement off, a detection must change nothing: not the stored tier,
 // and not this request either. The thresholds are placeholders, and acting on
 // them would restrict real people on numbers nobody has validated.
-func TestGateway_DetectionDoesNotEnforceWhenDisabled(t *testing.T) {
+func TestGateway_DetectionIsNotPersistedWhenDisabled(t *testing.T) {
 	loud := inspect.StubInspector{
 		InspectorName: "loud",
 		Signals: []capability.Signal{{
@@ -468,7 +468,7 @@ func TestGateway_DetectionDoesNotEnforceWhenDisabled(t *testing.T) {
 		}},
 	}
 	h := newHarness(t, inspect.Enforcing(loud))
-	h.gw.d.EnforceDecisions = false
+	h.gw.d.PersistDemotions = false
 
 	w := h.post(t, simpleBody, nil)
 
@@ -491,11 +491,11 @@ func TestGateway_DetectionDoesNotEnforceWhenDisabled(t *testing.T) {
 }
 
 // The floor is not a detection. "The guard is unreachable" is a known bad
-// state, so it restricts the request whatever EnforceDecisions says.
-func TestGateway_FloorAppliesEvenWithEnforcementDisabled(t *testing.T) {
+// state, so it restricts the request whatever PersistDemotions says.
+func TestGateway_FloorAppliesEvenWithPersistenceDisabled(t *testing.T) {
 	down := inspect.StubInspector{InspectorName: "down", Err: errors.New("unreachable")}
 	h := newHarness(t, inspect.Enforcing(down))
-	h.gw.d.EnforceDecisions = false
+	h.gw.d.PersistDemotions = false
 	h.gw.d.UnavailableFloor = capability.TierBlocked
 
 	w := h.post(t, simpleBody, nil)
@@ -539,7 +539,7 @@ func decisionTierFromLogs(t *testing.T, raw string) string {
 func TestGateway_FloorDoesNotContaminateTheDecision(t *testing.T) {
 	down := inspect.StubInspector{InspectorName: "down", Err: errors.New("unreachable")}
 	h := newHarness(t, inspect.Enforcing(down))
-	h.gw.d.EnforceDecisions = true
+	h.gw.d.PersistDemotions = true
 	h.gw.d.UnavailableFloor = capability.TierQuarantined
 
 	if w := h.post(t, simpleBody, nil); w.Code != http.StatusOK {
@@ -638,8 +638,8 @@ func TestGateway_RecordsDetections(t *testing.T) {
 	if rows[0].Metadata["confidence"] != "high" {
 		t.Errorf("confidence = %v, want the string form", rows[0].Metadata["confidence"])
 	}
-	if rows[0].Metadata["enforced"] != false {
-		t.Errorf("enforced = %v, want false", rows[0].Metadata["enforced"])
+	if rows[0].Metadata["persisted"] != false {
+		t.Errorf("persisted = %v, want false", rows[0].Metadata["persisted"])
 	}
 	// The counterfactual: the applied columns are NULL, so without this the
 	// record cannot say what would have happened.

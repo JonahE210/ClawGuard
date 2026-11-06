@@ -26,7 +26,7 @@ func violationsFrom(
 	redacted inspect.Redacted,
 	decision capability.Decision,
 	storedTier capability.Tier,
-	enforced bool,
+	persisted bool,
 	capture bool,
 ) []session.Violation {
 	var out []session.Violation
@@ -47,7 +47,7 @@ func violationsFrom(
 		// counterfactual is lost and shadow mode records nothing useful.
 		meta["proposed_from"] = storedTier.String()
 		meta["proposed_to"] = decision.To.String()
-		meta["enforced"] = enforced
+		meta["persisted"] = persisted
 		if b, err := json.Marshal(meta); err == nil {
 			v.Metadata = b
 		}

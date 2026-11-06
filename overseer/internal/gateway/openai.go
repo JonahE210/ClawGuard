@@ -28,6 +28,15 @@ type ChatRequest struct {
 	Tools    []Tool    `json:"-"`
 	Stream   bool      `json:"-"`
 
+	// ToolChoice is kept raw because it is a union: the string "none", "auto"
+	// or "required", or an object naming one function. The gateway only needs
+	// to know whether it points at a tool that is about to be removed, so
+	// modelling the whole union would be cost without benefit.
+	//
+	// Nil means absent, which is different from the string "auto": absent lets
+	// the provider apply its own default.
+	ToolChoice json.RawMessage `json:"-"`
+
 	extra map[string]json.RawMessage
 }
 
@@ -99,7 +108,7 @@ type ToolCallFunction struct {
 
 // reservedKeys are the fields ChatRequest models explicitly. Everything else
 // round-trips through extra.
-var reservedKeys = []string{"model", "messages", "tools", "stream"}
+var reservedKeys = []string{"model", "messages", "tools", "stream", "tool_choice"}
 
 func (r *ChatRequest) UnmarshalJSON(data []byte) error {
 	raw := map[string]json.RawMessage{}
@@ -126,6 +135,9 @@ func (r *ChatRequest) UnmarshalJSON(data []byte) error {
 		if err := json.Unmarshal(v, &r.Stream); err != nil {
 			return fmt.Errorf("field \"stream\": %w", err)
 		}
+	}
+	if v, ok := raw["tool_choice"]; ok {
+		r.ToolChoice = v
 	}
 
 	for _, k := range reservedKeys {
@@ -168,6 +180,12 @@ func (r ChatRequest) MarshalJSON() ([]byte, error) {
 		if err := put("stream", r.Stream); err != nil {
 			return nil, err
 		}
+	}
+	// Omitted when nil, so dropping a tool_choice that pointed at a removed
+	// tool falls back to the provider's default rather than being pinned to an
+	// explicit value we invented.
+	if r.ToolChoice != nil {
+		out["tool_choice"] = r.ToolChoice
 	}
 	return json.Marshal(out)
 }
